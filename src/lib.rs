@@ -207,44 +207,46 @@ impl Renderer {
 
 
       let draw_data = ctx.render();
+      // We shouldn't try to draw if there's nothing to draw.
+      if draw_data.draw_lists_count() != 0 {
+        for draw_list in draw_data.draw_lists() {
+          let vtx_buffer = draw_list.vtx_buffer();
+          let idx_buffer = draw_list.idx_buffer();
 
-      for draw_list in draw_data.draw_lists() {
-        let vtx_buffer = draw_list.vtx_buffer();
-        let idx_buffer = draw_list.idx_buffer();
+          gl.BindBuffer(gl::ARRAY_BUFFER, self.vbo);
+          gl.BufferData(gl::ARRAY_BUFFER, (vtx_buffer.len() * mem::size_of::<DrawVert>()) as _, vtx_buffer.as_ptr() as _, gl::STREAM_DRAW);
 
-        gl.BindBuffer(gl::ARRAY_BUFFER, self.vbo);
-        gl.BufferData(gl::ARRAY_BUFFER, (vtx_buffer.len() * mem::size_of::<DrawVert>()) as _, vtx_buffer.as_ptr() as _, gl::STREAM_DRAW);
+          gl.BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.ebo);
+          gl.BufferData(gl::ELEMENT_ARRAY_BUFFER, (idx_buffer.len() * mem::size_of::<DrawIdx>()) as _, idx_buffer.as_ptr() as _, gl::STREAM_DRAW);
 
-        gl.BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.ebo);
-        gl.BufferData(gl::ELEMENT_ARRAY_BUFFER, (idx_buffer.len() * mem::size_of::<DrawIdx>()) as _, idx_buffer.as_ptr() as _, gl::STREAM_DRAW);
+          for cmd in draw_list.commands() {
+            match cmd {
+              DrawCmd::Elements {
+                count,
+                cmd_params: DrawCmdParams {
+                  clip_rect: [x, y, z, w],
+                  texture_id,
+                  idx_offset,
+                  ..
+                },
+              } => {
+                gl.BindTexture(gl::TEXTURE_2D, texture_id.id() as _);
 
-        for cmd in draw_list.commands() {
-          match cmd {
-            DrawCmd::Elements {
-              count,
-              cmd_params: DrawCmdParams {
-                clip_rect: [x, y, z, w],
-                texture_id,
-                idx_offset,
-                ..
+                gl.Scissor((x * scale_w) as GLint,
+                           (fb_height - w * scale_h) as GLint,
+                           ((z - x) * scale_w) as GLint,
+                           ((w - y) * scale_h) as GLint);
+
+                let idx_size = if mem::size_of::<DrawIdx>() == 2 { gl::UNSIGNED_SHORT } else { gl::UNSIGNED_INT };
+
+                gl.DrawElements(gl::TRIANGLES, count as _, idx_size, (idx_offset * mem::size_of::<DrawIdx>()) as _);
               },
-            } => {
-              gl.BindTexture(gl::TEXTURE_2D, texture_id.id() as _);
-
-              gl.Scissor((x * scale_w) as GLint,
-                         (fb_height - w * scale_h) as GLint,
-                         ((z - x) * scale_w) as GLint,
-                         ((w - y) * scale_h) as GLint);
-
-              let idx_size = if mem::size_of::<DrawIdx>() == 2 { gl::UNSIGNED_SHORT } else { gl::UNSIGNED_INT };
-
-              gl.DrawElements(gl::TRIANGLES, count as _, idx_size, (idx_offset * mem::size_of::<DrawIdx>()) as _);
-            },
-            DrawCmd::ResetRenderState => {
-              unimplemented!("Haven't implemented DrawCmd::ResetRenderState yet");
-            },
-            DrawCmd::RawCallback { .. } => {
-              unimplemented!("Haven't implemented user callbacks yet");
+              DrawCmd::ResetRenderState => {
+                unimplemented!("Haven't implemented DrawCmd::ResetRenderState yet");
+              },
+              DrawCmd::RawCallback { .. } => {
+                unimplemented!("Haven't implemented user callbacks yet");
+              }
             }
           }
         }
